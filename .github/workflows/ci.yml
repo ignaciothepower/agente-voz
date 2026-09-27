@@ -1,0 +1,30 @@
+# S4: integracion continua (lo mismo que en AI Engineer S11). En cada push y en cada pull request:
+# secretos fuera del codigo, tests, tipos y build de produccion. Si algo falla, la X roja sale en GitHub.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Ningun secreto en el repositorio
+        run: node scripts/secretos.mjs
+      - name: Tests (guardarrailes, validacion, sesion)
+        run: npm test
+      - name: Tipos
+        run: npx tsc --noEmit
+      - name: Build de produccion
+        run: npm run build
+        env:
+          LLM: gemini
+          NEXT_PUBLIC_STT: navegador
