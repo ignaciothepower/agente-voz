@@ -80,7 +80,7 @@ export default async function Inicio() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-semibold">Lo que el agente podrá hacer</h2>
+        <h2 className="text-lg font-semibold">Lo que el agente puede hacer</h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {ACCIONES.map((a) => (
             <div key={a.nombre} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
