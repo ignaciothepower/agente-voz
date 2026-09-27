@@ -158,6 +158,9 @@ export function normalizar(accion: string, p: Record<string, unknown>, texto: st
   if (typeof q.titulo === "string") {
     const t = repararTitulo(q.titulo, texto);
     if (t !== q.titulo) cambiar("titulo", t, "se perdio una tilde");
+    // Hallazgo S4: "crea una reunion hoy a las 9" -> titulo "Reunion hoy". El cuando va en la fecha, no en el titulo
+    const sinCuando = String(q.titulo).replace(/\s+(para\s+)?(hoy|ma[nñ]ana|pasado ma[nñ]ana|esta tarde|esta noche)$/i, "").trim();
+    if (sinCuando && sinCuando !== q.titulo) cambiar("titulo", sinCuando, "el dia no es parte del titulo");
   }
   if (typeof q.evento === "string" && !estaEnElTexto(q.evento, texto))
     cambiar("evento", undefined, "el usuario no menciono ese evento: inventado");
