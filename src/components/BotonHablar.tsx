@@ -1,6 +1,7 @@
 "use client";
 // Etapas 1 y 5 en el navegador: grabar con el microfono (getUserMedia + MediaRecorder) y contestar con voz
-// (SpeechSynthesis). Entre medias, el servidor: /api/transcribir (Whisper) y /api/intencion (llama3.1).
+// (SpeechSynthesis). Entre medias, el servidor: /api/transcribir (Whisper) y, desde la S3, /api/agente
+// (llama3.1 + validacion + MCP del calendario, con memoria de la conversacion).
 import { useRef, useState } from "react";
 
 type Estado = "listo" | "grabando" | "procesando";
@@ -12,6 +13,11 @@ type Resultado = {
   error?: string;
   kb?: number;
   cortado?: boolean;
+  cambios?: { campo: string; antes: unknown; despues: unknown; motivo: string }[];
+  llamada?: { tool: string; args: Record<string, unknown> };
+  resultado?: { ok: boolean; texto: string; motivo?: string; evento?: { enlace?: string } };
+  estrategia?: string;
+  log?: { usuario: string; agente: string }[];
 };
 
 // Tope de grabacion por si nadie pulsa "parar". Con 15 s cortaba ordenes reales (la frase 12 dura 27 s):
@@ -91,13 +97,37 @@ export default function BotonHablar() {
       if (!r1.ok) throw new Error(t.error);
       const base = { texto: t.texto, sttSegundos: t.segundos, kb, cortado: cortado.current };
       setRes(base); // el texto sale en cuanto llega
+      await actuar(base);
+    } catch (e) {
+      setRes((prev) => ({ ...prev, error: (e as Error).message }));
+    } finally {
+      setPaso("");
+      setEstado("listo");
+    }
+  }
 
-      setPaso("Entendiendo la intención con llama3.1...");
-      const r2 = await fetch("/api/intencion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: t.texto }) });
-      const i = await r2.json();
-      if (!r2.ok) throw new Error(i.error);
-      setRes({ ...base, intencion: i.intencion, respuesta: i.respuesta });
-      hablar(i.respuesta);
+  async function actuar(base: Resultado) {
+    setPaso("Entendiendo y actuando (llama3.1 + MCP)...");
+    const r2 = await fetch("/api/agente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: base.texto }) });
+    const a = await r2.json();
+    if (!r2.ok) throw new Error(a.error);
+    const turno = a.turno;
+    setRes({ ...base, intencion: turno.intencion, cambios: turno.cambios, llamada: turno.llamada, resultado: turno.resultado,
+             estrategia: turno.estrategia, respuesta: turno.respuesta, log: a.log });
+    hablar(turno.respuesta);
+  }
+
+  // Sin microfono (o para probar rapido): la misma frase, escrita. Se salta Whisper y va directa al agente.
+  const [escrito, setEscrito] = useState("");
+  async function enviarEscrito(ev: React.FormEvent) {
+    ev.preventDefault();
+    if (!escrito.trim() || estado !== "listo") return;
+    setEstado("procesando");
+    const base = { texto: escrito.trim() };
+    setRes(base);
+    setEscrito("");
+    try {
+      await actuar(base);
     } catch (e) {
       setRes((prev) => ({ ...prev, error: (e as Error).message }));
     } finally {
@@ -130,14 +160,22 @@ export default function BotonHablar() {
             {estado === "grabando" && "Te escucho... pulsa Parar cuando termines"}
             {estado === "procesando" && paso}
           </p>
-          <p className="text-sm text-slate-500">Estado: <span className="font-mono">{estado}</span> · todavía no toco el calendario</p>
+          <p className="text-sm text-slate-500">Estado: <span className="font-mono">{estado}</span> · actúo en «Agente de voz (demo)»</p>
         </div>
       </div>
+
+      <form onSubmit={enviarEscrito} className="mt-4 flex gap-2">
+        <input value={escrito} onChange={(ev) => setEscrito(ev.target.value)} disabled={estado !== "listo"}
+               placeholder="…o escríbelo: «crea una reunión mañana a las diez»"
+               className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
+        <button type="submit" disabled={estado !== "listo" || !escrito.trim()}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Enviar</button>
+      </form>
 
       {res.error && <p className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{res.error}</p>}
       {res.texto && (
         <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">1 · Lo que he entendido (Whisper, {res.sttSegundos} s, {res.kb} KB de audio)</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{res.sttSegundos !== undefined ? `1 · Lo que he entendido (Whisper, ${res.sttSegundos} s, ${res.kb} KB de audio)` : "1 · Lo que has escrito (sin Whisper)"}</p>
           <p className="mt-1 text-lg">&ldquo;{res.texto}&rdquo;</p>
           {res.cortado && <p className="mt-1 text-sm text-amber-700">He dejado de escuchar a los {MAX_MS / 1000} s: si te corté, repítelo más corto.</p>}
         </div>
@@ -147,13 +185,38 @@ export default function BotonHablar() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             2 · La intención (llama3.1, {res.intencion.segundos} s){res.intencion.destructiva ? " · destructiva: pedirá confirmación" : ""}
           </p>
-          <pre className="mt-1 whitespace-pre-wrap font-mono text-sm">{JSON.stringify({ accion: res.intencion.accion, ...res.intencion.parametros }, null, 2)}</pre>
+          <pre className="mt-1 whitespace-pre-wrap font-mono text-sm">{JSON.stringify({ accion: res.intencion.accion, ...res.intencion.parametros })}</pre>
+          {res.cambios?.map((c) => (
+            <p key={c.campo} className="mt-1 font-mono text-xs text-amber-300">
+              validado · {c.campo}: {JSON.stringify(c.antes)} → {c.despues === undefined ? "(fuera)" : JSON.stringify(c.despues)} · {c.motivo}
+            </p>
+          ))}
+        </div>
+      )}
+      {(res.llamada || res.estrategia) && (
+        <div className={`mt-3 rounded-lg px-4 py-3 ${res.resultado?.ok ? "bg-emerald-50" : "bg-amber-50"}`}>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            3 · {res.resultado?.ok ? "Lo que he hecho en tu calendario (MCP)" : "Antes de actuar, te pregunto"}{res.estrategia ? ` · estrategia: ${res.estrategia}` : ""}
+          </p>
+          {res.llamada && <p className="mt-1 font-mono text-xs text-slate-600">tools/call {res.llamada.tool} {JSON.stringify(res.llamada.args)}</p>}
+          {res.resultado && <p className="mt-1 text-sm text-slate-800">{res.resultado.ok ? "✓" : "…"} {res.resultado.texto}</p>}
         </div>
       )}
       {res.respuesta && (
         <div className="mt-3 rounded-lg bg-indigo-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">3 · Lo que te contesto (en voz alta)</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">4 · Lo que te contesto (en voz alta)</p>
           <p className="mt-1 text-indigo-900">{res.respuesta}</p>
+        </div>
+      )}
+      {res.log && res.log.length > 1 && (
+        <div className="mt-3 rounded-lg border border-slate-200 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">La conversación (memoria corta, 30 min)</p>
+          {res.log.map((l, k) => (
+            <div key={k} className="mt-1 text-sm">
+              <p className="text-slate-500">Tú: &ldquo;{l.usuario}&rdquo;</p>
+              <p className="text-indigo-800">Agente: {l.agente}</p>
+            </div>
+          ))}
         </div>
       )}
     </section>

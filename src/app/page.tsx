@@ -31,9 +31,9 @@ export default async function Inicio() {
   const hoy = new Date().toLocaleDateString("es-ES", { timeZone: ZONA, weekday: "long", day: "numeric", month: "long" });
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 font-sans text-slate-800">
-      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesión 2</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesión 3</p>
       <h1 className="mt-1 text-3xl font-bold">Tu asistente de calendario</h1>
-      <p className="mt-2 text-slate-600">Hablas, te entiende y te contesta. El calendario, de momento, solo se mira.</p>
+      <p className="mt-2 text-slate-600">Hablas, te entiende y lo hace en tu calendario. Si duda, te pregunta.</p>
 
       <section className="mt-8 grid grid-cols-5 gap-2">
         {ETAPAS.map((e) => (
