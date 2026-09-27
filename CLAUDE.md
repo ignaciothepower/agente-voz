@@ -12,6 +12,7 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - `src/lib/google.ts` OAuth 2.0 y Calendar API con fetch (sin la libreria googleapis).
 - `src/lib/acciones.ts` esquema de las 4 acciones (crear/listar/mover/borrar), destructivas marcadas.
 - `stt/` servicio Python de transcripcion (Whisper small + ffmpeg a 16 kHz mono) en http://127.0.0.1:8765.
+- `mcp/servidor.ts` servidor MCP del calendario (S1: esqueleto que anuncia las 4 tools; S3: llama a Google Calendar).
 - `scripts/` pruebas que se ejecutan con `node scripts/<archivo>.ts` (node 24 ejecuta TypeScript).
 
 ## Reglas
@@ -24,3 +25,5 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - `python stt/servidor.py` servicio de Whisper (venv con stt/requirements.txt)
 - `python stt/probar.py audio.m4a --formato` probar una transcripcion
 - `node scripts/probar-acciones.ts "frase"` ver que accion elige el LLM
+- `node scripts/probar-mcp.ts` cliente MCP: lista las tools y llama a una
+- `python mcp/cliente_jsonrpc.py mcp/servidor.ts list` ver los mensajes JSON-RPC crudos (reciclado de AI Engineer S10)
