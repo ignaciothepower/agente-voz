@@ -84,6 +84,14 @@ export function estaEnElTexto(descripcion: string, texto: string): boolean {
   return palabras(descripcion).some((p) => p.length > 3 && !VACIAS.has(p) && dichas.has(p));
 }
 
+// Hallazgo S4 (Gemini): a veces el LLM no elige herramienta aunque la frase sea clara. La red de verbos lo
+// recuperaba, pero SIN datos, y ofrecia las reuniones del lunes para "la reunion del jueves". Ahora el evento
+// descrito se saca del propio texto: "la reunion del jueves", "la cita con el dentista"...
+export function eventoDelTexto(texto: string): string | null {
+  const m = texto.match(/\b(?:la|el)\s+((?:reuni[oó]n|cita|llamada|evento|clase)\s+(?:del?|con(?:\s+(?:el|la))?)\s+[a-záéíóúñ]{3,})/i);
+  return m ? m[1] : null;
+}
+
 // 4 · Tipos: "60" -> 60; horas "10:00"; fechas AAAA-MM-DD
 export function aEntero(v: unknown): number | null {
   const n = typeof v === "number" ? v : typeof v === "string" && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;

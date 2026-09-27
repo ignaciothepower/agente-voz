@@ -5,7 +5,7 @@
 // Sesion 4: NADA que cambie el calendario se ejecuta sin un "si" explicito. El host pide al MCP un ensayo
 // (simular: true), dice en voz alta lo que va a hacer y espera. Y antes de eso, los frenos de guardarrailes.ts.
 import { interpretar, type Intencion } from "./intencion.ts";
-import { horaDelTexto, hoyEnMadrid, normalizar, pideMasTarde, sinTildes, sumarDias, type Correccion } from "./validar.ts";
+import { eventoDelTexto, horaDelTexto, hoyEnMadrid, normalizar, pideMasTarde, sinTildes, sumarDias, type Correccion } from "./validar.ts";
 import { llamarTool } from "./mcp-cliente.ts";
 import { describir, duracionDe, horaDe, type Resultado } from "./calendario.ts";
 import { esDestructiva } from "./acciones.ts";
@@ -234,6 +234,12 @@ async function procesarTurno(texto: string, e: Estado): Promise<Turno> {
     t.cambios.push({ campo: "accion", antes: null, despues: verbo, motivo: "el LLM dijo fuera de alcance, pero hay un verbo de calendario" });
     i.accion = verbo;
     i.parametros = {};
+    // S4: lo que se pueda sacar del texto con codigo, se saca (antes se perdia "la reunion del jueves")
+    const evento = verbo === "mover_evento" || verbo === "borrar_evento" ? eventoDelTexto(texto) : null;
+    const h = horaDelTexto(texto);
+    if (evento) i.parametros.evento = evento;
+    if (h && verbo === "mover_evento") i.parametros.nueva_hora = h;
+    if (evento || h) t.cambios.push({ campo: "parametros", antes: {}, despues: i.parametros, motivo: "sacados del texto con codigo" });
   }
   // ...y si habia algo a medias ("¿a que hora?") y el LLM no eligio nada, la hora se saca del texto con codigo
   const hora = !i.accion && e.borrador ? horaDelTexto(texto) : null;

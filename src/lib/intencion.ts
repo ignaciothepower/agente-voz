@@ -7,7 +7,8 @@ import { ACCIONES, comoTools, esDestructiva } from "./acciones.ts";
 
 const OLLAMA = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const PROVEEDOR = process.env.LLM ?? "ollama";
-const MODELO = PROVEEDOR === "gemini" ? process.env.GEMINI_MODELO ?? "gemini-2.5-flash" : process.env.OLLAMA_MODELO ?? "llama3.1";
+const MODELO = PROVEEDOR === "gemini" ? process.env.GEMINI_MODELO ?? "gemini-3.8-flash" : process.env.OLLAMA_MODELO ?? "llama3.1";
+const RESPALDO = process.env.GEMINI_RESPALDO ?? "gemini-3.5-flash";
 const ZONA = "Europe/Madrid";
 
 export type Intencion = {
@@ -72,24 +73,34 @@ async function conGemini(texto: string, contexto?: string): Promise<Intencion> {
   const clave = process.env.GEMINI_API_KEY;
   if (!clave) throw new Error("Falta GEMINI_API_KEY");
   const t0 = Date.now();
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`, {
+  const pedir = (modelo: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": clave },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SISTEMA(contextoFecha(), contexto) }] },
       contents: [{ role: "user", parts: [{ text: texto }] }],
       tools: [{ functionDeclarations: ACCIONES.map((a) => ({ name: a.nombre, description: a.descripcion, parameters: a.parametros })) }],
-      generationConfig: { temperature: 0, maxOutputTokens: 200, thinkingConfig: { thinkingBudget: 0 } },
+      // Hallazgo S4: gemini-3.8-flash "piensa" aunque se le pida que no (thinkingBudget: 0 lo ignora) y los tokens
+      // de pensamiento cuentan dentro de maxOutputTokens. Con 200 se quedaba sin sitio y devolvia una respuesta vacia.
+      generationConfig: { temperature: 0, maxOutputTokens: 2048 },
     }),
     signal: AbortSignal.timeout(20_000),
   });
+  // Hallazgo S4: en la capa gratuita, un 503 "high demand" de vez en cuando. Un reintento y, si sigue, el modelo de
+  // respaldo (tambien gratuito). El 429 (limite por minuto) NO se reintenta: seria gastar mas cupo.
+  let modelo = MODELO;
+  let r = await pedir(modelo);
+  if (r.status === 503) { await new Promise((ok) => setTimeout(ok, 1500)); r = await pedir(modelo); }
+  if (r.status === 503) { modelo = RESPALDO; r = await pedir(modelo); }
   const datos = await r.json();
   if (!r.ok) throw new Error(r.status === 429 ? "Gemini: limite de la capa gratuita alcanzado, espera un minuto" : `Gemini respondio ${r.status}: ${datos.error?.message ?? ""}`);
   const partes: { text?: string; functionCall?: { name: string; args?: Record<string, unknown> } }[] = datos.candidates?.[0]?.content?.parts ?? [];
   const llamada = partes.find((p) => p.functionCall)?.functionCall;
   const segundos = Math.round((Date.now() - t0) / 100) / 10;
   if (!llamada) {
-    return { accion: null, parametros: {}, destructiva: false, nota: partes.map((p) => p.text ?? "").join("").trim(), segundos, modelo: MODELO };
+    const fin = datos.candidates?.[0]?.finishReason;
+    const nota = partes.map((p) => p.text ?? "").join("").trim() || `(vacia, finishReason ${fin})`;
+    return { accion: null, parametros: {}, destructiva: false, nota, segundos, modelo };
   }
-  return { accion: llamada.name, parametros: llamada.args ?? {}, destructiva: esDestructiva(llamada.name), segundos, modelo: MODELO };
+  return { accion: llamada.name, parametros: llamada.args ?? {}, destructiva: esDestructiva(llamada.name), segundos, modelo };
 }

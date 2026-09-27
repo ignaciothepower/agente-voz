@@ -8,7 +8,7 @@ const ETAPAS = [
   { n: 1, nombre: "Captura", detalle: "Navegador · MediaRecorder", sesion: "S2" },
   // S4: lo que corre en cada etapa depende de donde este desplegado (local o Vercel)
   { n: 2, nombre: "Transcripción", detalle: process.env.NEXT_PUBLIC_STT === "navegador" ? "Whisper base · en tu navegador" : "Whisper local · 16 kHz mono", sesion: "S1" },
-  { n: 3, nombre: "Intención", detalle: process.env.LLM === "gemini" ? `${process.env.GEMINI_MODELO ?? "gemini-2.5-flash"} · tools` : "llama3.1 · JSON", sesion: "S2" },
+  { n: 3, nombre: "Intención", detalle: process.env.LLM === "gemini" ? `${process.env.GEMINI_MODELO ?? "gemini-3.8-flash"} · tools` : "llama3.1 · JSON", sesion: "S2" },
   { n: 4, nombre: "Acción", detalle: "MCP · confirmación · frenos", sesion: "S3-S4" },
   { n: 5, nombre: "Respuesta", detalle: "Texto + voz", sesion: "S2-S4" },
 ];
