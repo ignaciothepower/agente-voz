@@ -1,13 +1,14 @@
 import { listarEventos, NOMBRE_CALENDARIO, rangoDeHoy, ZONA, type Evento } from "@/lib/google";
 import { ACCIONES } from "@/lib/acciones";
+import BotonHablar from "@/components/BotonHablar";
 
 export const dynamic = "force-dynamic";
 
 const ETAPAS = [
   { n: 1, nombre: "Captura", detalle: "Navegador · MediaRecorder", sesion: "S2" },
-  { n: 2, nombre: "Transcripcion", detalle: "Whisper local · 16 kHz mono", sesion: "S1" },
-  { n: 3, nombre: "Intencion", detalle: "llama3.1 · JSON", sesion: "S2" },
-  { n: 4, nombre: "Accion", detalle: "MCP · Google Calendar", sesion: "S3" },
+  { n: 2, nombre: "Transcripción", detalle: "Whisper local · 16 kHz mono", sesion: "S1" },
+  { n: 3, nombre: "Intención", detalle: "llama3.1 · JSON", sesion: "S2" },
+  { n: 4, nombre: "Acción", detalle: "MCP · Google Calendar", sesion: "S3" },
   { n: 5, nombre: "Respuesta", detalle: "Texto + voz", sesion: "S2-S4" },
 ];
 
@@ -30,9 +31,9 @@ export default async function Inicio() {
   const hoy = new Date().toLocaleDateString("es-ES", { timeZone: ZONA, weekday: "long", day: "numeric", month: "long" });
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 font-sans text-slate-800">
-      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesion 1</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesión 2</p>
       <h1 className="mt-1 text-3xl font-bold">Tu asistente de calendario</h1>
-      <p className="mt-2 text-slate-600">Hablas, te entiende y gestiona tu calendario. Hoy montamos las piezas.</p>
+      <p className="mt-2 text-slate-600">Hablas, te entiende y te contesta. El calendario, de momento, solo se mira.</p>
 
       <section className="mt-8 grid grid-cols-5 gap-2">
         {ETAPAS.map((e) => (
@@ -46,6 +47,8 @@ export default async function Inicio() {
           </div>
         ))}
       </section>
+
+      <BotonHablar />
 
       <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
@@ -76,14 +79,14 @@ export default async function Inicio() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-semibold">Lo que el agente podra hacer</h2>
+        <h2 className="text-lg font-semibold">Lo que el agente podrá hacer</h2>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {ACCIONES.map((a) => (
             <div key={a.nombre} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
                 <code className="font-semibold text-slate-900">{a.nombre}</code>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${a.destructiva ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>
-                  {a.destructiva ? "pide confirmacion" : "solo lectura"}
+                  {a.destructiva ? "pide confirmación" : "solo lectura"}
                 </span>
               </div>
               <p className="mt-1 text-sm text-slate-600">{a.descripcion}</p>
