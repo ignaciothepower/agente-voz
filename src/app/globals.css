@@ -12,15 +12,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* La plantilla de create-next-app ponia el fondo negro en modo oscuro, pero nuestros textos son oscuros:
+   con Windows en modo oscuro los titulos no se leian. De momento, la app es solo en modo claro. */
+:root {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
+  background: #f8fafc;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
