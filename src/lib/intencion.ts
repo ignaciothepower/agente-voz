@@ -5,10 +5,10 @@
 // (validacion, confirmacion, frenos) no sabe ni le importa que modelo hay detras.
 import { ACCIONES, comoTools, esDestructiva } from "./acciones.ts";
 
-const OLLAMA = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const PROVEEDOR = process.env.LLM ?? "ollama";
-const MODELO = PROVEEDOR === "gemini" ? process.env.GEMINI_MODELO ?? "gemini-3.8-flash" : process.env.OLLAMA_MODELO ?? "llama3.1";
-const RESPALDO = process.env.GEMINI_RESPALDO ?? "gemini-3.5-flash";
+const OLLAMA = process.env.OLLAMA_URL || "http://localhost:11434";
+const PROVEEDOR = process.env.LLM || "ollama";
+const MODELO = PROVEEDOR === "gemini" ? process.env.GEMINI_MODELO || "gemini-3.8-flash" : process.env.OLLAMA_MODELO || "llama3.1";
+const RESPALDO = process.env.GEMINI_RESPALDO || "gemini-3.5-flash";
 const ZONA = "Europe/Madrid";
 
 export type Intencion = {
@@ -48,7 +48,7 @@ async function conOllama(texto: string, contexto?: string): Promise<Intencion> {
     body: JSON.stringify({
       model: MODELO,
       stream: false,
-      keep_alive: process.env.OLLAMA_KEEP_ALIVE ?? "5m", // caliente entre frases; al acabar: ollama stop
+      keep_alive: process.env.OLLAMA_KEEP_ALIVE || "5m", // caliente entre frases; al acabar: ollama stop
       options: { temperature: 0, num_predict: 200 },
       tools: comoTools(),
       messages: [
