@@ -1,12 +1,15 @@
 // Sesion 3: las acciones de verdad sobre Google Calendar, con sus comprobaciones. Lo usa el servidor MCP.
 // Si falta un dato, no se encuentra el evento o hay varios candidatos, NO se adivina: se devuelve el motivo
 // para que el agente pregunte. Importes con .ts: node ejecuta este archivo directamente desde mcp/servidor.ts.
+// Sesion 4: toda accion que cambia el calendario acepta "simular: true" (un ensayo: valida y dice que HARIA, sin
+// tocar nada) para que el host pueda pedir confirmacion con datos reales, y pasa por los frenos de guardarrailes.ts.
+import { revisarDatos } from "./guardarrailes.ts";
 import { actualizarEventoRaw, borrarEventoRaw, crearEventoRaw, listarEventos, rangoDeHoy, type Evento } from "./google.ts";
 import { aEntero, diaSemana, fechaValida, horaValida, hoyEnMadrid, sinTildes, sumarDias } from "./validar.ts";
 
 export type Resultado =
-  | { ok: true; texto: string; evento?: Evento; eventos?: Evento[] }
-  | { ok: false; motivo: "falta" | "no_encontrado" | "ambiguo" | "invalido"; texto: string; faltan?: string[]; opciones?: Evento[] };
+  | { ok: true; texto: string; evento?: Evento; eventos?: Evento[]; simulado?: boolean }
+  | { ok: false; motivo: "falta" | "no_encontrado" | "ambiguo" | "invalido" | "freno"; texto: string; faltan?: string[]; opciones?: Evento[]; freno?: string };
 
 const desfase = () => rangoDeHoy().desde.slice(19); // "+02:00" (cambia solo en octubre)
 const iso = (fecha: string, hora: string) => `${fecha}T${hora}:00`;
@@ -31,11 +34,28 @@ export async function crear(p: Record<string, unknown>): Promise<Resultado> {
   if ((p.fecha && !fecha) || (p.hora && !hora)) return { ok: false, motivo: "invalido", texto: `Fecha u hora imposible: ${p.fecha ?? ""} ${p.hora ?? ""}` };
   const faltan = [!titulo && "titulo", !fecha && "fecha", !hora && "hora"].filter(Boolean) as string[];
   if (faltan.length) return { ok: false, motivo: "falta", faltan, texto: `Me falta: ${faltan.join(", ")}` };
-  const dur = aEntero(p.duracion_min ?? 60);
-  if (dur === null || dur < 5 || dur > 480) return { ok: false, motivo: "invalido", texto: "La duracion tiene que estar entre 5 minutos y 8 horas" };
+  const freno = revisarDatos({ fecha: fecha!, hora: hora!, duracion: p.duracion_min ?? 60, titulo });
+  if (freno) return { ok: false, motivo: "freno", freno: freno.freno, texto: freno.texto };
+  const dur = aEntero(p.duracion_min ?? 60)!;
+  if (p.simular) {
+    const previsto: Evento = { id: "", titulo: titulo!, inicio: iso(fecha!, hora!), fin: mas(fecha!, hora!, dur) };
+    return { ok: true, simulado: true, evento: previsto, texto: `crear ${describir(previsto)} (${dur} min)${await avisoSolape(previsto)}` };
+  }
   const e = await crearEventoRaw(titulo!, iso(fecha!, hora!), mas(fecha!, hora!, dur));
   const evento: Evento = { id: e.id, titulo: titulo!, inicio: iso(fecha!, hora!), fin: mas(fecha!, hora!, dur), enlace: e.htmlLink };
   return { ok: true, evento, texto: `Creado ${describir(evento)} (${dur} min)` };
+}
+
+// Hallazgo S4: el primer ensayo dio por bueno crear "Reunion con equipo de marketing" el lunes a las 10... que YA
+// existia desde la S3. No es un error (puedes querer dos cosas a la vez), pero quien confirma tiene que saberlo.
+// Se compara como texto "AAAA-MM-DDTHH:MM" en hora de Madrid: en Vercel el reloj del servidor va en UTC.
+async function avisoSolape(nuevo: Evento, excluir?: string): Promise<string> {
+  const dia = nuevo.inicio.slice(0, 10);
+  const del_dia = await listarEventos(`${dia}T00:00:00${desfase()}`, `${dia}T23:59:59${desfase()}`);
+  const ini = nuevo.inicio.slice(0, 16), fin = nuevo.fin.slice(0, 16);
+  const choca = del_dia.filter((e) => e.id !== excluir && e.inicio.slice(0, 16) < fin && e.fin.slice(0, 16) > ini);
+  if (!choca.length) return "";
+  return `. Ojo: a esa hora ya tienes ${choca.map((e) => `"${e.titulo}" a las ${horaDe(e)}`).join(" y ")}`;
 }
 
 export async function listar(p: Record<string, unknown>): Promise<Resultado> {
@@ -87,6 +107,15 @@ export async function mover(p: Record<string, unknown>, id?: string): Promise<Re
   const dur = aEntero(p.duracion_min) ?? duracionDe(evento);
   if (!p.nueva_fecha && !p.nueva_hora && p.duracion_min === undefined)
     return { ok: false, motivo: "falta", faltan: ["nueva_hora"], texto: `¿A que hora muevo ${describir(evento)}?`, opciones: [evento] };
+  // Hallazgo S4: "mueve la reunion del jueves a las cinco" cuando YA estaba a las cinco pedia confirmar... nada
+  if (fecha === fechaDe(evento) && hora === horaDe(evento) && dur === duracionDe(evento))
+    return { ok: false, motivo: "invalido", texto: `${describir(evento)} ya está justo así: no hay nada que cambiar` };
+  const freno = revisarDatos({ fecha, hora, duracion: dur });
+  if (freno) return { ok: false, motivo: "freno", freno: freno.freno, texto: freno.texto };
+  if (p.simular) {
+    const aviso = await avisoSolape({ ...evento, inicio: iso(fecha, hora), fin: mas(fecha, hora, dur) }, evento.id);
+    return { ok: true, simulado: true, evento, texto: `mover ${describir(evento)} al ${diaSemana(fecha)} ${fecha.slice(8)} a las ${hora} (${dur} min)${aviso}` };
+  }
   await actualizarEventoRaw(evento.id, iso(fecha, hora), mas(fecha, hora, dur));
   const nuevo: Evento = { ...evento, inicio: iso(fecha, hora), fin: mas(fecha, hora, dur) };
   return { ok: true, evento: nuevo, texto: `Movido ${describir(evento)} -> ${diaSemana(fecha)} ${fecha.slice(8)} a las ${hora} (${dur} min)` };
@@ -98,9 +127,12 @@ export async function borrar(p: Record<string, unknown>, id?: string): Promise<R
   if (!evento) {
     const r = await uno(p.evento);
     if (r.fallo) return r.fallo;
+    // En un ensayo si se puede localizar por descripcion: no se toca nada y el host pide confirmacion con el id
+    if (p.simular) return { ok: true, simulado: true, evento: r.evento, texto: `borrar ${describir(r.evento!)}` };
     // Borrar a partir de una DESCRIPCION nunca se ejecuta directo: se devuelve el candidato y el host confirma con su id
     return { ok: false, motivo: "ambiguo", opciones: [r.evento!], texto: `¿Es ${describir(r.evento!)}?` };
   }
+  if (p.simular) return { ok: true, simulado: true, evento, texto: `borrar ${describir(evento)}` };
   await borrarEventoRaw(evento.id);
   return { ok: true, evento, texto: `Borrado ${describir(evento)}` };
 }

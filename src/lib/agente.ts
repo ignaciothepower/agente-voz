@@ -1,19 +1,31 @@
-// Sesion 3: el agente que ACTUA. Une la intencion (llama3.1), la validacion en codigo y el MCP del calendario,
+// Sesion 3: el agente que ACTUA. Une la intencion (LLM), la validacion en codigo y el MCP del calendario,
 // con memoria corta de la conversacion. IDEA CLAVE: si falta un dato o hay duda, PREGUNTA en vez de inventar.
 // Las tres estrategias ante la ambiguedad: 1) preguntar lo que falta, 2) dar opciones para elegir,
 // 3) proponer un valor por defecto y confirmarlo antes de actuar.
+// Sesion 4: NADA que cambie el calendario se ejecuta sin un "si" explicito. El host pide al MCP un ensayo
+// (simular: true), dice en voz alta lo que va a hacer y espera. Y antes de eso, los frenos de guardarrailes.ts.
 import { interpretar, type Intencion } from "./intencion.ts";
 import { horaDelTexto, hoyEnMadrid, normalizar, pideMasTarde, sinTildes, sumarDias, type Correccion } from "./validar.ts";
 import { llamarTool } from "./mcp-cliente.ts";
 import { describir, duracionDe, horaDe, type Resultado } from "./calendario.ts";
+import { esDestructiva } from "./acciones.ts";
+import { esAfirmacion, esNegacion, LIMITES, registrar, revisarMasivo, revisarRitmo, type Freno } from "./guardarrailes.ts";
 import type { Evento } from "./google.ts";
 
 type Borrador = { accion: string; parametros: Record<string, unknown> };
 type Pendiente =
-  | { tipo: "confirmar"; tool: string; args: Record<string, unknown>; resumen: string }
+  | { tipo: "confirmar"; tool: string; args: Record<string, unknown>; resumen: string; hasta: number }
   | { tipo: "elegir"; tool: string; args: Record<string, unknown>; opciones: Evento[]; masTarde: boolean };
 
-export type Estado = { borrador?: Borrador; pendiente?: Pendiente; ultimo?: Evento; turnos: number; log: { usuario: string; agente: string }[] };
+export type Estado = {
+  id: string;
+  borrador?: Borrador;
+  pendiente?: Pendiente;
+  ultimo?: Evento;
+  turnos: number;
+  hechas: number[]; // cuando se ejecuto cada cambio real (para el limite de ritmo)
+  log: { usuario: string; agente: string }[];
+};
 export type Turno = {
   texto: string;
   intencion?: Intencion;
@@ -21,6 +33,9 @@ export type Turno = {
   llamada?: { tool: string; args: Record<string, unknown> };
   resultado?: Resultado;
   estrategia?: "preguntar" | "opciones" | "proponer";
+  confirmacion?: "pedida" | "aceptada" | "rechazada" | "caducada";
+  freno?: string;
+  descartado?: string; // lo que estaba pendiente de confirmar y se ha dejado sin hacer
   respuesta: string;
 };
 
@@ -53,20 +68,65 @@ function verboDeCalendario(texto: string): string | null {
 const seRefiereAlUltimo = (texto: string) =>
   /\b\w+(la|lo|le)\b/.test(sinTildes(texto).replace(/\b(la|lo|le)\b/g, "")) || /\b(ultim|esa|ese|esta reunion)/.test(sinTildes(texto));
 
-async function ejecutar(e: Estado, t: Turno, tool: string, args: Record<string, unknown>): Promise<Turno> {
+async function frenar(e: Estado, t: Turno, f: Freno, tool?: string, args?: Record<string, unknown>): Promise<Turno> {
+  t.freno = f.freno;
+  t.respuesta = f.texto;
+  await registrar({ conversacion: e.id, tipo: "freno", tool, args, freno: f.freno, texto: f.texto });
+  return t;
+}
+
+// S4 paso 1: antes de cambiar nada, ENSAYO en el MCP + resumen + "¿confirmas?". El ensayo pasa por las mismas
+// comprobaciones que la ejecucion real, asi que lo que el usuario confirma es exactamente lo que se hara.
+async function pedirConfirmacion(e: Estado, t: Turno, tool: string, args: Record<string, unknown>): Promise<Turno> {
+  const ritmo = revisarRitmo(e.hechas);
+  if (ritmo) return frenar(e, t, ritmo, tool, args);
+  t.llamada = { tool, args: { ...args, simular: true } };
+  const r: Resultado = await llamarTool(tool, { ...args, simular: true });
+  t.resultado = r;
+  if (r.ok && r.simulado) {
+    e.borrador = undefined;
+    const definitivos = { ...args, ...(r.evento?.id ? { id: r.evento.id } : {}) };
+    e.pendiente = { tipo: "confirmar", tool, args: definitivos, resumen: r.texto, hasta: Date.now() + LIMITES.confirmacionSeg * 1000 };
+    t.confirmacion = "pedida";
+    t.respuesta = `Voy a ${r.texto}. ¿Confirmas?`;
+    return t;
+  }
+  return fallo(e, t, tool, args, r);
+}
+
+async function ejecutar(e: Estado, t: Turno, tool: string, args: Record<string, unknown>, confirmado = false): Promise<Turno> {
+  if (esDestructiva(tool) && !confirmado) return pedirConfirmacion(e, t, tool, args);
+  if (esDestructiva(tool)) {
+    const ritmo = revisarRitmo(e.hechas);
+    if (ritmo) return frenar(e, t, ritmo, tool, args);
+  }
   t.llamada = { tool, args };
   const r: Resultado = await llamarTool(tool, args);
   t.resultado = r;
-  if (r.ok) {
-    e.borrador = undefined;
-    e.pendiente = undefined;
-    if (r.evento) e.ultimo = r.evento;
-    t.respuesta = tool === "listar_eventos"
-      ? r.eventos?.length ? `Tienes ${r.eventos.length}: ${r.eventos.map((x) => `a ${HORAS(horaDe(x))}, ${x.titulo}`).join("; ")}.` : "No tienes nada."
-      : tool === "crear_evento" ? `Hecho: he creado ${describir(r.evento!)}.`
-      : tool === "mover_evento" && !args.nueva_hora && !args.nueva_fecha ? `Hecho: ${describir(r.evento!)} ahora dura ${duracionDe(r.evento!)} minutos.`
-      : tool === "mover_evento" ? `Hecho: ${r.texto.replace(/^Movido /, "he movido ").replace("->", "al")}.`
-      : `Hecho: ${r.texto.toLowerCase()}.`;
+  if (!r.ok) return fallo(e, t, tool, args, r);
+  if (esDestructiva(tool)) {
+    e.hechas = [...e.hechas, Date.now()].slice(-LIMITES.cambiosPorVentana);
+    await registrar({ conversacion: e.id, tipo: "accion", tool, args, resultado: "ok", texto: r.texto });
+  }
+  e.borrador = undefined;
+  e.pendiente = undefined;
+  if (r.evento) e.ultimo = r.evento;
+  t.respuesta = tool === "listar_eventos"
+    ? r.eventos?.length ? `Tienes ${r.eventos.length}: ${r.eventos.map((x) => `a ${HORAS(horaDe(x))}, ${x.titulo}`).join("; ")}.` : "No tienes nada."
+    : tool === "crear_evento" ? `Hecho: he creado ${describir(r.evento!)}.`
+    : tool === "mover_evento" && !args.nueva_hora && !args.nueva_fecha ? `Hecho: ${describir(r.evento!)} ahora dura ${duracionDe(r.evento!)} minutos.`
+    : tool === "mover_evento" ? `Hecho: ${r.texto.replace(/^Movido /, "he movido ").replace("->", "al")}.`
+    : `Hecho: ${r.texto[0].toLowerCase()}${r.texto.slice(1)}.`; // solo la primera letra: el titulo se respeta
+  return t;
+}
+
+// Lo que no se pudo hacer (ni ensayar): se explica el freno, se ofrecen opciones o se pregunta
+async function fallo(e: Estado, t: Turno, tool: string, args: Record<string, unknown>, r: Resultado): Promise<Turno> {
+  if (r.ok) return t;
+  if (r.motivo === "freno") {
+    t.freno = r.freno;
+    t.respuesta = r.texto;
+    await registrar({ conversacion: e.id, tipo: "freno", tool, args, freno: r.freno, texto: r.texto });
   } else if (r.motivo === "ambiguo" && r.opciones) {
     e.pendiente = { tipo: "elegir", tool, args, opciones: r.opciones, masTarde: false };
     t.estrategia = "opciones";
@@ -85,9 +145,23 @@ async function resolverPendiente(e: Estado, t: Turno): Promise<Turno | null> {
   const p = e.pendiente!;
   const s = sinTildes(t.texto);
   if (p.tipo === "confirmar") {
-    if (/\b(si|vale|confirm|claro|adelante|hazlo|ok)/.test(s)) return ejecutar(e, t, p.tool, p.args);
-    if (/\b(no|cancela|olvida|dejalo)\b/.test(s)) { e.pendiente = undefined; t.respuesta = "Vale, no toco nada."; return t; }
-    return null; // es otra orden: se interpreta de cero
+    // Un "si" que llega tarde no vale: el calendario (o la hora) puede haber cambiado entre medias
+    if (Date.now() > p.hasta) {
+      e.pendiente = undefined;
+      if (!esAfirmacion(t.texto)) return null;
+      t.confirmacion = "caducada";
+      t.respuesta = `Ha pasado demasiado tiempo desde que te lo pregunté. Si quieres ${p.resumen}, pídemelo otra vez.`;
+      return t;
+    }
+    if (esAfirmacion(t.texto)) { t.confirmacion = "aceptada"; return ejecutar(e, t, p.tool, p.args, true); }
+    if (esNegacion(t.texto)) {
+      e.pendiente = undefined;
+      t.confirmacion = "rechazada";
+      t.respuesta = "Vale, no toco nada.";
+      await registrar({ conversacion: e.id, tipo: "cancelada", tool: p.tool, args: p.args, texto: p.resumen });
+      return t;
+    }
+    return null; // ni si ni no: es otra orden, se interpreta de cero y lo pendiente se descarta
   }
   const i = ORDINALES.findIndex((o) => s.includes(o));
   const n = s.match(/\b([1-4])\b/);
@@ -96,7 +170,7 @@ async function resolverPendiente(e: Estado, t: Turno): Promise<Turno | null> {
   const elegido = p.opciones[k];
   if (!elegido) {
     // Ni un numero ni un nombre de la lista: volvemos a preguntar SIN llamar al LLM (serian otros 45 s)
-    if (/\b(no|cancela|olvida|dejalo)\b/.test(s)) { e.pendiente = undefined; t.respuesta = "Vale, no toco nada."; return t; }
+    if (esNegacion(t.texto)) { e.pendiente = undefined; t.respuesta = "Vale, no toco nada."; return t; }
     // ...salvo que sea una orden nueva ("ponle una hora de duracion"): hallazgo S3, se quedaba atascado aqui
     if (verboDeCalendario(t.texto) || /\b(ponle|pon|mejor|cambia)\b/.test(s) || s.split(/\s+/).length > 3) return null;
     t.estrategia = "opciones";
@@ -112,8 +186,9 @@ async function seguirConEvento(e: Estado, t: Turno, tool: string, args: Record<s
   if (tool === "mover_evento" && !args.nueva_hora && !args.nueva_fecha && args.duracion_min === undefined) {
     if (masTarde) {
       const hora = sumarHora(horaDe(ev), 60);
-      e.pendiente = { tipo: "confirmar", tool, args: { ...args, id: ev.id, nueva_hora: hora }, resumen: `mover ${describir(ev)} a ${HORAS(hora)}` };
+      e.pendiente = { tipo: "confirmar", tool, args: { ...args, id: ev.id, nueva_hora: hora }, resumen: `mover ${describir(ev)} a ${HORAS(hora)}`, hasta: Date.now() + LIMITES.confirmacionSeg * 1000 };
       t.estrategia = "proponer";
+      t.confirmacion = "pedida";
       t.respuesta = `¿Muevo ${describir(ev)} una hora más tarde, a ${HORAS(hora)}?`;
       return t;
     }
@@ -127,6 +202,11 @@ async function seguirConEvento(e: Estado, t: Turno, tool: string, args: Record<s
 
 export async function procesar(texto: string, e: Estado): Promise<Turno> {
   const t = await procesarTurno(texto, e);
+  // Hallazgo S4: una orden nueva descartaba en silencio lo que estaba pendiente de confirmar. Ahora se dice
+  if (t.descartado) {
+    t.respuesta = `Dejo sin hacer lo de antes (${t.descartado.replace(/ \(\d+ min\).*$/, "")}). ${t.respuesta}`;
+    await registrar({ conversacion: e.id, tipo: "cancelada", texto: `descartada por una orden nueva: ${t.descartado}` });
+  }
   e.log = [...e.log, { usuario: texto, agente: t.respuesta }].slice(-6);
   return t;
 }
@@ -135,10 +215,15 @@ async function procesarTurno(texto: string, e: Estado): Promise<Turno> {
   e.turnos++;
   const t: Turno = { texto, cambios: [], respuesta: "" };
   if (e.pendiente) {
+    const p = e.pendiente;
     const r = await resolverPendiente(e, t);
     if (r) return r;
+    if (p.tipo === "confirmar" && e.pendiente) t.descartado = p.resumen; // (si caduco, resolverPendiente ya lo quito)
     e.pendiente = undefined;
   }
+  // S4: "borra todo" se frena ANTES del LLM (no existe esa tool, y asi no gastamos 50 s en entenderlo)
+  const masivo = revisarMasivo(texto);
+  if (masivo) return frenar(e, t, masivo);
 
   const i = await interpretar(texto, contexto(e));
   t.intencion = i;
@@ -158,8 +243,8 @@ async function procesarTurno(texto: string, e: Estado): Promise<Turno> {
     i.parametros = { ...e.borrador!.parametros, [e.borrador!.accion === "mover_evento" ? "nueva_hora" : "hora"]: hora };
   }
   if (!i.accion) {
-    t.respuesta = "Solo puedo ayudarte con tu calendario: crear, consultar, mover o borrar eventos.";
-    return t;
+    // S4: el fuera de alcance tambien es un freno, y queda en el registro
+    return frenar(e, t, { freno: "alcance", texto: "Solo puedo gestionar tu calendario: crear, consultar, mover o borrar eventos." });
   }
 
   // Memoria: lo que ya sabiamos del borrador se conserva; solo se validan los datos NUEVOS de esta frase
@@ -210,14 +295,6 @@ async function procesarTurno(texto: string, e: Estado): Promise<Turno> {
   return ejecutar(e, t, i.accion, args);
 }
 
-// Memoria corta en el servidor: una conversacion por cookie, 30 minutos
-type Global = { __conversaciones?: Map<string, { estado: Estado; hasta: number }> };
-const g = globalThis as Global;
-export function estadoDe(id: string): Estado {
-  g.__conversaciones ??= new Map();
-  const c = g.__conversaciones.get(id);
-  if (c && c.hasta > Date.now()) { c.hasta = Date.now() + 30 * 60_000; return c.estado; }
-  const estado: Estado = { turnos: 0, log: [] };
-  g.__conversaciones.set(id, { estado, hasta: Date.now() + 30 * 60_000 });
-  return estado;
+export function estadoNuevo(id: string): Estado {
+  return { id, turnos: 0, hechas: [], log: [] };
 }
