@@ -43,3 +43,6 @@ next-env.d.ts
 
 # grabaciones de voz del profesor: se quedan en local
 /audios/
+
+# registro local de acciones del agente (S4): puede contener titulos de tus eventos
+/logs/
