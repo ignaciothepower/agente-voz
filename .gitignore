@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# grabaciones de voz del profesor: se quedan en local
+/audios/
