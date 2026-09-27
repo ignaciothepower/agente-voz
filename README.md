@@ -3,7 +3,7 @@
 Proyecto del Master de Desarrollo Agentico (The Power). Hablas al navegador y el agente gestiona tu Google Calendar:
 voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar) -> respuesta. Coste cero.
 
-## Estado: Sesion 1 · Arquitectura y especificaciones
+## Estado: Sesion 2 · El loop de voz
 
 | Pieza | Donde | Estado |
 |-------|-------|--------|
@@ -12,7 +12,10 @@ voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar
 | Google Calendar (OAuth, calendario propio) | `src/lib/google.ts`, `src/app/api/` | hecho: eventos de hoy |
 | Esquema de acciones (4, destructivas marcadas) | `src/lib/acciones.ts` | hecho y probado con llama3.1 |
 | Servidor MCP del calendario | `mcp/servidor.ts` | esqueleto: anuncia las 4 tools |
-| Captura de voz, intencion, respuesta | | Sesion 2 |
+| Captura de voz en el navegador | `src/components/BotonHablar.tsx` | hecho: getUserMedia + MediaRecorder (webm/opus) |
+| Audio -> texto desde la app | `src/app/api/transcribir/` | hecho: FormData -> servicio de Whisper |
+| Texto -> intencion (JSON) | `src/lib/intencion.ts`, `src/app/api/intencion/` | hecho: llama3.1 con el esquema de acciones |
+| Respuesta en texto y voz | `src/lib/respuesta.ts` + SpeechSynthesis | hecho: sin tocar el calendario |
 | Ejecutar via MCP, ambiguedad, contexto | | Sesion 3 |
 | Confirmacion humana, guardarrailes, CI, despliegue | | Sesion 4 |
 
@@ -26,7 +29,7 @@ voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar
    Workspace; si no, Externo en modo prueba con tu cuenta como usuario de prueba) -> cliente OAuth "Aplicacion web"
    con el redirect `http://localhost:3000/api/google/callback`.
 5. `cp .env.example .env.local` y pega GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET.
-6. `npm run dev`, abre http://localhost:3000 y pulsa "Conectar Google Calendar". La app guarda el token y crea su
+6. Arranca Whisper (`python stt/servidor.py`) y Ollama, luego `npm run dev`, abre http://localhost:3000 y pulsa "Conectar Google Calendar". La app guarda el token y crea su
    propio calendario "Agente de voz (demo)": es el unico que puede tocar (permiso `calendar.app.created`).
 7. Opcional: `node --env-file=.env.local scripts/sembrar.ts` mete eventos de ejemplo.
 
@@ -34,4 +37,11 @@ voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar
 
 - `python stt/probar.py mi_audio.m4a --formato` transcribe un audio y ensena el formato antes y despues.
 - `node --env-file=.env.local scripts/probar-permisos.ts` demo del permiso minimo (tu calendario principal: 404).
+- `node scripts/probar-intencion.ts "frase" ...` el JSON de la intencion y la respuesta, sin tocar el calendario.
 - `node scripts/probar-mcp.ts` y `python mcp/cliente_jsonrpc.py mcp/servidor.ts list` el MCP por dentro.
+
+## El loop de voz (Sesion 2)
+
+Pulsa **Hablar**, di la orden y pulsa **Parar** (corta solo a los 30 s). La pagina ensena, en cuanto llega, lo que
+entendio Whisper, el JSON de la intencion y la respuesta, que ademas lee en voz alta el navegador (prefiere una voz
+es-ES local: las "Online (Natural)" de Edge mandan el texto a Microsoft). El microfono exige HTTPS o localhost.
