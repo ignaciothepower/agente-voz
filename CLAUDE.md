@@ -3,7 +3,7 @@
 Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especificacion completa en `docs/ESPEC.md`.
 
 ## Contexto
-- Flujo: voz (navegador) -> Whisper local (STT) -> LLM de intencion (llama3.1, Ollama) -> accion (MCP -> Google Calendar) -> respuesta.
+- Flujo: voz (navegador) -> Whisper (local en Python, o en el navegador en produccion) -> LLM de intencion (llama3.1 en local, Gemini en produccion) -> accion (MCP -> Google Calendar) -> respuesta.
 - Coste cero: nada de APIs de pago. Todo el contenido, comentarios y mensajes de commit en espanol.
 - El agente solo toca el calendario "Agente de voz (demo)" (variable GOOGLE_CALENDARIO), nunca el principal.
 
@@ -16,10 +16,13 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - `mcp/servidor.ts` servidor MCP del calendario (S3: llama de verdad a Google Calendar via `src/lib/calendario.ts`).
 - `src/lib/validar.ts` comprobaciones en codigo; `src/lib/agente.ts` el host MCP con memoria y ambiguedad; `/api/agente`.
 - `scripts/` pruebas que se ejecutan con `node scripts/<archivo>.ts` (node 24 ejecuta TypeScript).
+- S4: `src/lib/guardarrailes.ts` (frenos, confirmacion, registro), `src/lib/mcp-servidor.ts` (definicion del MCP; stdio en local, en memoria en Vercel), `src/lib/sesion.ts` (memoria en cookie firmada), `src/middleware.ts` (clave de acceso), `public/whisper-worker.js` (Whisper en el navegador), `tests/` y `.github/workflows/ci.yml`.
 
 ## Reglas
 - Secretos solo en `.env.local` (en .gitignore). Nunca en el codigo ni en los commits.
-- Acciones destructivas: siempre confirmacion humana antes de ejecutar.
+- Acciones destructivas: siempre confirmacion humana antes de ejecutar. Primero un ensayo en el MCP (`simular: true`), luego "¿confirmas?", y solo un si corto y claro vale ("si puedes mover..." NO es un si).
+- Frenos en codigo (S4): nada en el pasado, duracion 5 min - 8 h, maximo un año vista, 5 cambios cada 10 min, nada masivo ("borra todo"), fuera de alcance educado. Cada accion y cada freno quedan en el registro (`logs/acciones.jsonl` en local, logs de Vercel en produccion).
+- Produccion: LLM=gemini, NEXT_PUBLIC_STT=navegador, APP_SECRETO y APP_CLAVE obligatorias. El login de Google solo en local.
 - Si falta un dato, repreguntar; nunca inventarlo.
 - Los textos que ve u oye el usuario, en espanol correcto con tildes (el TTS los lee tal cual). En el codigo, sin tildes.
 - Nada que no haya dicho el usuario llega al calendario: horas, dias o eventos inventados por el LLM se descartan.
@@ -27,7 +30,8 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - Las fechas relativas NO se fian al LLM (confundio el jueves con el miercoles): se calculan o validan en codigo (S3).
 
 ## Comandos
-- `npm run dev` app en http://localhost:3000
+- `npm run dev` app en http://localhost:3000 (`?stt=navegador` para probar Whisper en el navegador)
+- `npm test` tests (node:test, sin librerias) · `npm run secretos` busca credenciales en lo que se va a subir
 - `python stt/servidor.py` servicio de Whisper (venv con stt/requirements.txt)
 - `python stt/probar.py audio.m4a --formato` probar una transcripcion
 - `node scripts/probar-acciones.ts "frase"` ver que accion elige el LLM
