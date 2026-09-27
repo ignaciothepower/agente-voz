@@ -23,14 +23,16 @@ export function contextoFecha(ahora = new Date()): string {
   return `Hoy es ${semana} ${dia} y son las ${hora} (zona ${ZONA}).`;
 }
 
-const SISTEMA = (fecha: string) =>
-  `Eres el asistente de voz de un calendario. ${fecha}
+const SISTEMA = (fecha: string, contexto?: string) =>
+  `Eres el asistente de voz de un calendario. ${fecha}${contexto ? `
+CONVERSACION EN CURSO: ${contexto}` : ""}
 Te llega lo que el usuario ha dicho, ya transcrito. Elige UNA de las herramientas y rellena sus parametros.
 Resuelve las fechas relativas (manana, el jueves) a AAAA-MM-DD y las horas a HH:MM de 24 horas.
 Si el usuario habla de otra cosa ademas del calendario, ignora esa parte.
 Si lo que pide no es del calendario, no uses ninguna herramienta y responde solo: FUERA_DE_ALCANCE.`;
 
-export async function interpretar(texto: string): Promise<Intencion> {
+// contexto (S3): lo que se esta construyendo o el ultimo evento creado, para que "mejor a las once" tenga sentido
+export async function interpretar(texto: string, contexto?: string): Promise<Intencion> {
   const t0 = Date.now();
   const r = await fetch(`${OLLAMA}/api/chat`, {
     method: "POST",
@@ -41,7 +43,7 @@ export async function interpretar(texto: string): Promise<Intencion> {
       options: { temperature: 0, num_predict: 200 },
       tools: comoTools(),
       messages: [
-        { role: "system", content: SISTEMA(contextoFecha()) },
+        { role: "system", content: SISTEMA(contextoFecha(), contexto) },
         { role: "user", content: texto },
       ],
     }),
