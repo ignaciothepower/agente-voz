@@ -1,7 +1,7 @@
 // Tests de la validacion en codigo (S3), con los fallos reales de la S2 como casos
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fechaDelTexto, horaDelTexto, mencionaHora, normalizar, repararTitulo } from "../src/lib/validar.ts";
+import { eventoDelTexto, fechaDelTexto, horaDelTexto, mencionaHora, normalizar, repararTitulo } from "../src/lib/validar.ts";
 
 const HOY = "2026-09-27"; // domingo
 
@@ -24,6 +24,12 @@ test("normalizar quita la hora inventada y arregla la tilde perdida", () => {
   assert.equal(parametros.titulo, "Reunión");
   assert.ok(cambios.some((c) => c.campo === "hora"));
   assert.equal(repararTitulo("Reunin con marketing", "Crea una reunión con marketing"), "Reunión con marketing");
+});
+
+test("el evento se saca del texto si el LLM no elige herramienta (hallazgo S4 con Gemini)", () => {
+  assert.equal(eventoDelTexto("te voy a pedir por favor si puedes mover la reunión del jueves a las cinco de la tarde"), "reunión del jueves");
+  assert.equal(eventoDelTexto("Borra la cita con el dentista."), "cita con el dentista");
+  assert.equal(eventoDelTexto("Muévela a más tarde."), null);
 });
 
 test("el dia no se cuela en el titulo (hallazgo S4: 'Reunion hoy')", () => {
