@@ -6,9 +6,10 @@ export const dynamic = "force-dynamic";
 
 const ETAPAS = [
   { n: 1, nombre: "Captura", detalle: "Navegador · MediaRecorder", sesion: "S2" },
-  { n: 2, nombre: "Transcripción", detalle: "Whisper local · 16 kHz mono", sesion: "S1" },
-  { n: 3, nombre: "Intención", detalle: "llama3.1 · JSON", sesion: "S2" },
-  { n: 4, nombre: "Acción", detalle: "MCP · Google Calendar", sesion: "S3" },
+  // S4: lo que corre en cada etapa depende de donde este desplegado (local o Vercel)
+  { n: 2, nombre: "Transcripción", detalle: process.env.NEXT_PUBLIC_STT === "navegador" ? "Whisper base · en tu navegador" : "Whisper local · 16 kHz mono", sesion: "S1" },
+  { n: 3, nombre: "Intención", detalle: process.env.LLM === "gemini" ? `${process.env.GEMINI_MODELO ?? "gemini-2.5-flash"} · tools` : "llama3.1 · JSON", sesion: "S2" },
+  { n: 4, nombre: "Acción", detalle: "MCP · confirmación · frenos", sesion: "S3-S4" },
   { n: 5, nombre: "Respuesta", detalle: "Texto + voz", sesion: "S2-S4" },
 ];
 
@@ -30,12 +31,12 @@ export default async function Inicio() {
   const { eventos, error } = await eventosDeHoy();
   const hoy = new Date().toLocaleDateString("es-ES", { timeZone: ZONA, weekday: "long", day: "numeric", month: "long" });
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10 font-sans text-slate-800">
-      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesión 3</p>
+    <main className="mx-auto max-w-4xl px-4 py-8 font-sans text-slate-800 sm:px-6 sm:py-10">
+      <p className="text-sm font-semibold uppercase tracking-widest text-indigo-600">Agente de voz · Sesión 4</p>
       <h1 className="mt-1 text-3xl font-bold">Tu asistente de calendario</h1>
-      <p className="mt-2 text-slate-600">Hablas, te entiende y lo hace en tu calendario. Si duda, te pregunta.</p>
+      <p className="mt-2 text-slate-600">Hablas, te entiende y, cuando le dices que sí, lo hace en tu calendario. Si duda, te pregunta.</p>
 
-      <section className="mt-8 grid grid-cols-5 gap-2">
+      <section className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {ETAPAS.map((e) => (
           <div key={e.n} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex items-center justify-between">
@@ -80,7 +81,7 @@ export default async function Inicio() {
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Lo que el agente podrá hacer</h2>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {ACCIONES.map((a) => (
             <div key={a.nombre} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
