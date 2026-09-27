@@ -19,7 +19,7 @@ Alcance: SOLO el calendario de demo "Agente de voz (demo)". Nada de correo, cont
 - **Si falta un dato, se pregunta**: nunca inventar hora, fecha o "cual de las reuniones" (S3).
 - **Confirmacion humana**: crear, mover y borrar son destructivas y piden un "si" explicito (S4). Listar va directo.
 - **Secretos fuera del codigo**: credenciales de Google en `.env.local` (local) y en variables de la plataforma (produccion).
-- **Permisos minimos (OAuth)**: `calendar.calendarlist.readonly` + `calendar.events`. Nada mas.
+- **Permisos minimos (OAuth)**: solo `calendar.app.created`: la app crea su calendario y SOLO puede tocar ese.
 - **Coste cero**: Whisper y el LLM en local, Google Calendar API gratis.
 
 ## Fuera de alcance (a proposito)
