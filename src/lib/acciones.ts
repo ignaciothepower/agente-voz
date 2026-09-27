@@ -48,7 +48,8 @@ export const ACCIONES: Accion[] = [
   },
   {
     nombre: "mover_evento",
-    descripcion: "Cambia la fecha y/o la hora de un evento que YA existe. Usala para mover, retrasar, adelantar o cambiar de hora.",
+    // S3: anadida la duracion. El esquema de la S1 no sabia contestar a "ponle una hora de duracion".
+    descripcion: "Cambia la fecha, la hora y/o la duracion de un evento que YA existe. Usala para mover, retrasar, adelantar, cambiar de hora o alargar/acortar.",
     destructiva: true,
     parametros: {
       type: "object",
@@ -56,6 +57,7 @@ export const ACCIONES: Accion[] = [
         evento: { type: "string", description: "Como describe el usuario el evento, por ejemplo 'la reunion del jueves'" },
         nueva_fecha: FECHA,
         nueva_hora: HORA,
+        duracion_min: { type: "integer", description: "Nueva duracion en minutos, solo si el usuario la cambia" },
       },
       required: ["evento"],
     },

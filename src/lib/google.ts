@@ -81,7 +81,7 @@ async function api<T>(ruta: string, init: RequestInit = {}): Promise<T> {
     headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json", ...init.headers },
     cache: "no-store",
   });
-  const datos = await r.json();
+  const datos = r.status === 204 ? {} : await r.json(); // DELETE responde 204 sin cuerpo
   if (!r.ok) throw new Error(`Calendar API ${r.status}: ${datos.error?.message ?? r.statusText}`);
   return datos as T;
 }
@@ -100,11 +100,12 @@ export async function crearCalendario(): Promise<string> {
   return cal.id;
 }
 
-export type Evento = { id: string; titulo: string; inicio: string; fin: string };
+export type Evento = { id: string; titulo: string; inicio: string; fin: string; enlace?: string };
 
 type EventoGoogle = {
   id: string;
   summary?: string;
+  htmlLink?: string;
   start: { dateTime?: string; date?: string };
   end: { dateTime?: string; date?: string };
 };
@@ -127,6 +128,7 @@ export async function listarEventos(desde: string, hasta: string): Promise<Event
     titulo: e.summary ?? "(sin titulo)",
     inicio: e.start.dateTime ?? e.start.date ?? "",
     fin: e.end.dateTime ?? e.end.date ?? "",
+    enlace: e.htmlLink,
   }));
 }
 
@@ -136,4 +138,18 @@ export async function crearEventoRaw(titulo: string, inicio: string, fin: string
     method: "POST",
     body: JSON.stringify({ summary: titulo, start: { dateTime: inicio, timeZone: ZONA }, end: { dateTime: fin, timeZone: ZONA } }),
   });
+}
+
+// Sesion 3: cambiar la hora (y la duracion) de un evento que ya existe, y borrarlo
+export async function actualizarEventoRaw(id: string, inicio: string, fin: string) {
+  const cal = encodeURIComponent(await idCalendario());
+  return api<EventoGoogle>(`/calendars/${cal}/events/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ start: { dateTime: inicio, timeZone: ZONA }, end: { dateTime: fin, timeZone: ZONA } }),
+  });
+}
+
+export async function borrarEventoRaw(id: string) {
+  const cal = encodeURIComponent(await idCalendario());
+  await api(`/calendars/${cal}/events/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
