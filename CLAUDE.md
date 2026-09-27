@@ -13,7 +13,8 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - `src/lib/acciones.ts` esquema de las 4 acciones (crear/listar/mover/borrar), destructivas marcadas.
 - `src/components/BotonHablar.tsx` captura en el navegador y voz de vuelta; `src/lib/intencion.ts` (llama3.1) y `src/lib/respuesta.ts` (plantillas, sin LLM).
 - `stt/` servicio Python de transcripcion (Whisper small + ffmpeg a 16 kHz mono) en http://127.0.0.1:8765.
-- `mcp/servidor.ts` servidor MCP del calendario (S1: esqueleto que anuncia las 4 tools; S3: llama a Google Calendar).
+- `mcp/servidor.ts` servidor MCP del calendario (S3: llama de verdad a Google Calendar via `src/lib/calendario.ts`).
+- `src/lib/validar.ts` comprobaciones en codigo; `src/lib/agente.ts` el host MCP con memoria y ambiguedad; `/api/agente`.
 - `scripts/` pruebas que se ejecutan con `node scripts/<archivo>.ts` (node 24 ejecuta TypeScript).
 
 ## Reglas
@@ -21,6 +22,8 @@ Proyecto del Master de Desarrollo Agentico (The Power), P2, 4 sesiones. Especifi
 - Acciones destructivas: siempre confirmacion humana antes de ejecutar.
 - Si falta un dato, repreguntar; nunca inventarlo.
 - Los textos que ve u oye el usuario, en espanol correcto con tildes (el TTS los lee tal cual). En el codigo, sin tildes.
+- Nada que no haya dicho el usuario llega al calendario: horas, dias o eventos inventados por el LLM se descartan.
+- Borrar a partir de una descripcion nunca se ejecuta directo (el lentista borro al dentista en una prueba).
 - Las fechas relativas NO se fian al LLM (confundio el jueves con el miercoles): se calculan o validan en codigo (S3).
 
 ## Comandos

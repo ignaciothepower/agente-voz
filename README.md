@@ -3,7 +3,7 @@
 Proyecto del Master de Desarrollo Agentico (The Power). Hablas al navegador y el agente gestiona tu Google Calendar:
 voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar) -> respuesta. Coste cero.
 
-## Estado: Sesion 2 · El loop de voz
+## Estado: Sesion 3 · Integracion con el calendario (via MCP)
 
 | Pieza | Donde | Estado |
 |-------|-------|--------|
@@ -11,12 +11,14 @@ voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar
 | Whisper local (small, 16 kHz mono) | `stt/` | hecho: servicio en 127.0.0.1:8765 |
 | Google Calendar (OAuth, calendario propio) | `src/lib/google.ts`, `src/app/api/` | hecho: eventos de hoy |
 | Esquema de acciones (4, destructivas marcadas) | `src/lib/acciones.ts` | hecho y probado con llama3.1 |
-| Servidor MCP del calendario | `mcp/servidor.ts` | esqueleto: anuncia las 4 tools |
 | Captura de voz en el navegador | `src/components/BotonHablar.tsx` | hecho: getUserMedia + MediaRecorder (webm/opus) |
 | Audio -> texto desde la app | `src/app/api/transcribir/` | hecho: FormData -> servicio de Whisper |
 | Texto -> intencion (JSON) | `src/lib/intencion.ts`, `src/app/api/intencion/` | hecho: llama3.1 con el esquema de acciones |
 | Respuesta en texto y voz | `src/lib/respuesta.ts` + SpeechSynthesis | hecho: sin tocar el calendario |
-| Ejecutar via MCP, ambiguedad, contexto | | Sesion 3 |
+| Ejecutar via MCP (Google Calendar real) | `mcp/servidor.ts`, `src/lib/calendario.ts` | hecho: crear, listar, mover, borrar |
+| Validar datos en codigo | `src/lib/validar.ts` | hecho: fechas calculadas, horas/eventos inventados fuera, tildes |
+| Ambiguedad (preguntar, opciones, proponer y confirmar) | `src/lib/agente.ts` | hecho |
+| Memoria corta de la conversacion | `src/lib/agente.ts` + `/api/agente` | hecho: 30 min por cookie |
 | Confirmacion humana, guardarrailes, CI, despliegue | | Sesion 4 |
 
 ## Puesta en marcha
@@ -45,3 +47,14 @@ voz -> Whisper (local) -> intencion (llama3.1) -> accion (MCP -> Google Calendar
 Pulsa **Hablar**, di la orden y pulsa **Parar** (corta solo a los 30 s). La pagina ensena, en cuanto llega, lo que
 entendio Whisper, el JSON de la intencion y la respuesta, que ademas lee en voz alta el navegador (prefiere una voz
 es-ES local: las "Online (Natural)" de Edge mandan el texto a Microsoft). El microfono exige HTTPS o localhost.
+
+## El agente que actua (Sesion 3)
+
+`/api/agente` recibe el texto, llama3.1 propone la accion, `validar.ts` comprueba los datos (fechas relativas
+calculadas en codigo, horas y eventos que el usuario no dijo -> fuera, tildes recuperadas) y el MCP del calendario
+ejecuta. Si falta algo, el agente pregunta; si hay varios candidatos, da opciones; si dices "mas tarde", propone
+una hora y espera tu "si". Pruebalo tambien desde la terminal:
+
+    node --env-file=.env.local scripts/conversacion.ts "Muevela a mas tarde." "la segunda" "si, confirmalo"
+
+OJO: en la Sesion 3 crear y mover se ejecutan sin confirmacion (llega en la Sesion 4). Solo toca el calendario de demo.
