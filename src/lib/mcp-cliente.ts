@@ -11,7 +11,7 @@ import { crearServidor } from "./mcp-servidor.ts";
 type Global = { __mcpCalendario?: Promise<Client> };
 const g = globalThis as Global; // en desarrollo Next recarga modulos: un solo servidor para toda la app
 
-export const transporteMcp = () => (process.env.MCP_TRANSPORTE ?? (process.env.VERCEL ? "memoria" : "stdio"));
+export const transporteMcp = () => (process.env.MCP_TRANSPORTE || (process.env.VERCEL ? "memoria" : "stdio"));
 
 async function conectar(): Promise<Client> {
   const cliente = new Client({ name: "agente-voz", version: "0.4.0" });

@@ -28,7 +28,8 @@ type Resultado = {
 // Tope de grabacion por si nadie pulsa "parar". Con 15 s cortaba ordenes reales (la frase 12 dura 27 s):
 // 30 s y, si cortamos, lo decimos en pantalla en vez de hacerlo en silencio.
 const MAX_MS = 30_000;
-const MODELO_WHISPER = process.env.NEXT_PUBLIC_WHISPER_MODELO ?? "onnx-community/whisper-base";
+// S4: con "||" y no "??": una variable definida pero VACIA en Vercel cuenta como no puesta
+const MODELO_WHISPER = process.env.NEXT_PUBLIC_WHISPER_MODELO || "onnx-community/whisper-base";
 
 // "servidor" (local: Whisper small en Python) o "navegador" (Vercel). ?stt=navegador para probarlo en local
 function modoStt(): "servidor" | "navegador" {

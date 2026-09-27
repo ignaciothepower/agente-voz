@@ -10,7 +10,7 @@ const API = "https://www.googleapis.com/calendar/v3";
 export const SCOPES = ["https://www.googleapis.com/auth/calendar.app.created"];
 
 export const ZONA = "Europe/Madrid";
-export const NOMBRE_CALENDARIO = process.env.GOOGLE_CALENDARIO ?? "Agente de voz (demo)";
+export const NOMBRE_CALENDARIO = process.env.GOOGLE_CALENDARIO || "Agente de voz (demo)";
 
 function variable(nombre: string): string {
   const valor = process.env[nombre];
@@ -19,7 +19,7 @@ function variable(nombre: string): string {
 }
 
 export function redirectUri(): string {
-  return process.env.GOOGLE_REDIRECT_URI ?? "http://localhost:3000/api/google/callback";
+  return process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000/api/google/callback";
 }
 
 // 1 · Mandamos al usuario a Google para que de permiso (pantalla de consentimiento)

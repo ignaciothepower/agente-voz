@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const STT = process.env.STT_URL ?? "http://127.0.0.1:8765";
+const STT = process.env.STT_URL || "http://127.0.0.1:8765";
 const MAX_BYTES = 10 * 1024 * 1024; // el mismo limite que el servicio de Whisper
 
 // POST /api/transcribir  (FormData con el campo "audio")  ->  { texto, duracion_audio, segundos }
