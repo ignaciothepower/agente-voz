@@ -1,38 +1,49 @@
-// Servidor MCP del calendario (esqueleto de la Sesion 1): expone las 4 acciones de src/lib/acciones.ts como tools.
-// Hoy solo las ANUNCIA; en la Sesion 3 cada tool llamara de verdad a Google Calendar.
+// Servidor MCP del calendario. S1: esqueleto que solo anunciaba las tools. S3: cada tool llama DE VERDAD a Google Calendar.
+// Las comprobaciones viven aqui (src/lib/calendario.ts): cualquier host que use este MCP queda protegido igual.
 // Es el mismo concepto que el servidor MCP propio de AI Engineer S10, ahora en TypeScript.
-//     node mcp/servidor.ts            (habla MCP por stdin/stdout: lo arranca el cliente, no se usa a mano)
+//     node --env-file=.env.local mcp/servidor.ts     (habla MCP por stdin/stdout: lo arranca el host)
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { ACCIONES, esDestructiva } from "../src/lib/acciones.ts";
+import { ACCIONES } from "../src/lib/acciones.ts";
+import { borrar, crear, listar, mover, type Resultado } from "../src/lib/calendario.ts";
 
-const servidor = new Server({ name: "calendario", version: "0.1.0" }, { capabilities: { tools: {} } });
+const servidor = new Server({ name: "calendario", version: "0.3.0" }, { capabilities: { tools: {} } });
+const ID = { type: "string", description: "Id exacto del evento en Google Calendar. Lo pone el host cuando ya sabe cual es" };
 
-// tools/list: el cliente pregunta "que sabes hacer?" y le damos el esquema (una sola fuente: acciones.ts)
+// tools/list: el mismo esquema de acciones.ts; mover y borrar aceptan ademas el id exacto
 servidor.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: ACCIONES.map((a) => ({
     name: a.nombre,
     description: a.descripcion,
-    inputSchema: a.parametros,
-    // pista estandar de MCP: la tool cambia cosas y el host deberia pedir confirmacion
+    inputSchema: ["mover_evento", "borrar_evento"].includes(a.nombre)
+      ? { ...a.parametros, properties: { ...a.parametros.properties, id: ID } }
+      : a.parametros,
     annotations: { readOnlyHint: !a.destructiva, destructiveHint: a.destructiva },
   })),
 }));
 
-// tools/call: de momento no ejecuta nada, solo dice que recibio (Sesion 3: llamada real a Google Calendar)
+const EJECUTAR: Record<string, (p: Record<string, unknown>) => Promise<Resultado>> = {
+  crear_evento: crear,
+  listar_eventos: listar,
+  mover_evento: (p) => mover(p, typeof p.id === "string" ? p.id : undefined),
+  borrar_evento: (p) => borrar(p, typeof p.id === "string" ? p.id : undefined),
+};
+
+// tools/call: ejecuta y devuelve el resultado en JSON (ok, o el motivo por el que no se hizo)
 servidor.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const { name, arguments: args } = req.params;
-  if (!ACCIONES.some((a) => a.nombre === name))
-    return { isError: true, content: [{ type: "text", text: `No conozco la tool ${name}` }] };
-  return {
-    content: [{
-      type: "text",
-      text: `[esqueleto] recibida ${name}(${JSON.stringify(args)})${esDestructiva(name) ? " - destructiva" : ""}. ` +
-        "Todavia no toco el calendario: eso llega en la Sesion 3.",
-    }],
-  };
+  const { name, arguments: args = {} } = req.params;
+  const hacer = EJECUTAR[name];
+  if (!hacer) return { isError: true, content: [{ type: "text", text: `No conozco la tool ${name}` }] };
+  try {
+    const r = await hacer(args as Record<string, unknown>);
+    console.error(`[mcp] ${name} ${JSON.stringify(args)} -> ${r.ok ? "ok" : r.motivo}: ${r.texto}`);
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
+  } catch (e) {
+    console.error(`[mcp] ${name} ERROR ${(e as Error).message}`);
+    return { isError: true, content: [{ type: "text", text: `Fallo al hablar con Google Calendar: ${(e as Error).message}` }] };
+  }
 });
 
 await servidor.connect(new StdioServerTransport());
-console.error("[mcp] servidor 'calendario' listo por stdio"); // stderr: stdout es solo para el protocolo
+console.error("[mcp] servidor 'calendario' 0.3.0 listo por stdio (Google Calendar real)");
